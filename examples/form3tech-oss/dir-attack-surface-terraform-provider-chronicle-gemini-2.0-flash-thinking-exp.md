@@ -1,0 +1,92 @@
+### Key Attack Surface List for chronicle
+
+- **Attack Surface:** Misconfiguration of API Credentials
+  - Description: Users might misconfigure API credentials for Chronicle within the Terraform provider, leading to authentication failures or potentially unauthorized access if weak or shared credentials are used.
+  - How chronicle contributes to the attack surface: The Terraform provider requires users to supply API credentials for authentication with Chronicle services. Incorrectly configured or insecurely managed credentials directly impact the security of the Chronicle integration.
+  - Example: A user provides an incorrect `backstoryapi_credentials` value in the `chronicle` provider configuration block, or reuses credentials that are compromised elsewhere.
+  - Impact: Service disruption due to authentication failures. In cases of weak or reused credentials, it could lead to unauthorized actions within the Chronicle platform if these credentials become compromised.
+  - Risk Severity: Medium
+  - Current Mitigations:
+    - Input validation is performed using the `validateCredentials` function to ensure the provided credentials are in the expected format. This reduces the risk of simple misconfigurations.
+    - Documentation encourages users to utilize environment variables or separate credential files, which are generally considered more secure than hardcoding credentials directly in Terraform configuration files.
+    - The risk severity is reduced by these existing mitigations, as basic validation and guidance towards better practices are in place.
+  - Missing Mitigations:
+    - Implement more robust input validation to check for credential strength or entropy, although this is challenging for API keys.
+    - Provide clearer guidance and warnings in the documentation about the risks of using weak or shared credentials.
+    - Recommend and demonstrate best practices for secure credential management within Terraform, such as using a dedicated secrets management tool.
+
+- **Attack Surface:** Exposure of API Credentials in Terraform State Files
+  - Description: API credentials, when provided directly in the Terraform configuration, can be stored in plaintext within the Terraform state file. This state file is often stored unencrypted, creating a significant risk of credential exposure.
+  - How chronicle contributes to the attack surface: The provider schema is designed to accept API credentials as configuration parameters, making it possible for users to embed sensitive credentials directly into their Terraform code.
+  - Example: A user includes `backstoryapi_credentials = "sensitive-api-key"` directly within the `provider "chronicle" { ... }` block in their Terraform configuration. This key is then likely stored in plaintext in the Terraform state file.
+  - Impact: High - If a Terraform state file is compromised (e.g., through unauthorized access to storage, accidental exposure, or insider threat), the plaintext API credentials within it are exposed. This could grant attackers unauthorized access to the Chronicle environment, potentially leading to data breaches, unauthorized monitoring, or malicious activities within Chronicle.
+  - Risk Severity: High
+  - Current Mitigations:
+    - The provider marks credential fields in the schema as sensitive (`Sensitive: true`). This setting, when respected by Terraform backends, prevents the display of these values in CLI output but does not inherently prevent storage in plaintext in the state file itself.
+    - Documentation advises against hardcoding credentials and recommends using environment variables or external files for credential management.
+    - The risk severity remains high despite these mitigations because the fundamental issue of potential plaintext storage in state files persists if users ignore best practices.
+  - Missing Mitigations:
+    - Include stronger, more prominent warnings in the documentation about the severe security risks associated with storing credentials in Terraform state files.
+    - Emphasize and promote the use of secure Terraform backend storage options (like AWS S3, Google Cloud Storage, Azure Storage) that offer encryption for state files at rest.
+    - Consider adding a feature or guidance to integrate with external secret management solutions to retrieve credentials at runtime, avoiding state file storage altogether.
+
+- **Attack Surface:** Insecure Handling of Third-Party Service Credentials in Feed Resources
+  - Description: Certain resources like `chronicle_feed_amazon_s3`, `chronicle_feed_azure_blobstore`, `chronicle_feed_qualys_vm`, `chronicle_feed_thinkst_canary` and others require users to provide credentials for third-party services (AWS, Azure, Okta, Qualys, Thinkst Canary, etc.). Insecure handling of these credentials within Terraform configurations poses a high risk of exposure and unauthorized access to these external services.
+  - How chronicle contributes to the attack surface: The provider's feed resources are designed to accept and manage credentials for external services as resource attributes. This design inherently introduces the risk of insecure credential management if users are not careful. The addition of `chronicle_feed_qualys_vm` and `chronicle_feed_thinkst_canary` resources expands the scope of this attack surface to include Qualys VM and Thinkst Canary credentials.
+  - Example: A user hardcodes Thinkst Canary `value` directly within a `chronicle_feed_thinkst_canary` resource block in their Terraform configuration. These Thinkst Canary credentials, intended for Chronicle to access Thinkst Canary, could be exposed if the Terraform state is compromised.
+  - Impact: Critical - Compromise of third-party service credentials. This could lead to significant security breaches, including unauthorized access to sensitive data in Qualys VM, Thinkst Canary, S3 buckets, Azure Blob Storage, Okta user directories, and other integrated services. Attackers could potentially exfiltrate data, modify configurations, or perform other malicious actions within these third-party environments.
+  - Risk Severity: Critical
+  - Current Mitigations:
+    - Similar to provider credentials, resource-level credential fields are marked as sensitive (`Sensitive: true`) in the schema.
+    - Input validation functions like `validateAWSAccessKeyID`, `validateAWSSecretAccessKey` and implicit validation due to schema type string with `Sensitive:true` for `details.authentication.value` in `resource_feed_thinkst_canary.go` are used to ensure basic format correctness, but do not prevent insecure storage or weak credentials.
+    - Documentation examples use placeholder credentials, implicitly discouraging copy-pasting real secrets, but this is not a strong mitigation.
+    - The risk remains critical because direct credential input in configurations, with potential plaintext storage in state, is still possible.
+  - Missing Mitigations:
+    - Include prominent, critical warnings in resource documentation against hardcoding third-party service credentials in Terraform configurations.
+    - Strongly recommend and provide examples of using IAM roles or instance profiles (for AWS), Azure Managed Identities (for Azure), or similar mechanisms that avoid the need to manage long-term credentials directly, wherever applicable for feed resource authentication. For API based feeds like `chronicle_feed_thinkst_canary` and `chronicle_feed_qualys_vm` explore options for credential less authentication or integration with secret management solutions.
+    -  Offer guidance on secure credential management specifically for third-party services within the context of Terraform and the Chronicle provider, pointing towards best practices and external secret management solutions.
+
+- **Attack Surface:** Custom Endpoint Misconfiguration
+  - Description: The provider allows users to configure custom endpoints for various Chronicle APIs (Events, Alert, Artifact, etc.). Misconfiguring these custom endpoints, whether due to typos or misunderstanding, can lead to data being inadvertently sent to unintended or potentially malicious locations, or to communication failures that disrupt Chronicle integration.
+  - How chronicle contributes to the attack surface: The provider's design includes optional `*_custom_endpoint` configuration parameters, enabling users to override default API endpoints. This flexibility introduces the risk of misconfiguration.
+  - Example: A user mistakenly sets `events_custom_endpoint = "http://malicious-endpoint.example.com"` instead of the correct Chronicle Events API endpoint URL. Consequently, event data might be sent to a malicious server instead of Chronicle.
+  - Impact: Medium - Potential data leakage if logs are sent to a malicious endpoint. Service disruption if the custom endpoint is unreachable or incorrectly configured, preventing data ingestion or proper provider function.
+  - Risk Severity: Medium
+  - Current Mitigations:
+    - Basic URL validation is performed using the `validateCustomEndpoint` function to ensure that the provided custom endpoints are at least syntactically valid URLs.
+    - Default endpoint configurations are in place, so users must actively choose to use custom endpoints.
+    - The risk severity is partially mitigated by basic validation, but the potential for sending data to wrong locations remains.
+  - Missing Mitigations:
+    - Improve endpoint validation to be more robust, possibly including checks to ensure the endpoint is a valid and expected type of service (though this is technically challenging and might not be feasible).
+    - Provide clearer documentation and warnings about the risks of using custom endpoints, especially concerning data privacy and integrity if endpoints are misconfigured.
+    - Recommend caution and thorough testing when using custom endpoints, especially in production environments.
+
+- **Attack Surface:** Vulnerabilities in YARA-L Rules Managed via the Provider
+  - Description: Users can upload and manage YARA-L rules to Chronicle through the `chronicle_rule` resource. While less directly a vulnerability in the provider itself, maliciously crafted or vulnerable YARA-L rules could be uploaded via the provider, potentially causing issues within the Chronicle backend rule engine and impacting detection capabilities.
+  - How chronicle contributes to the attack surface: The `chronicle_rule` resource functionality enables users to manage YARA-L rules within Chronicle. This management capability indirectly introduces the risk of rule-based vulnerabilities if rules are not carefully vetted.
+  - Example: A user, intentionally or unintentionally, uploads a YARA-L rule that is poorly written and causes excessive resource consumption in the Chronicle rule engine, leading to performance degradation. Or, a rule might contain logic errors that cause it to miss critical threats or generate excessive false positives, undermining Chronicle's detection effectiveness.
+  - Impact: Medium - Potential instability or performance degradation of the Chronicle rule engine due to poorly written or malicious rules. Reduced effectiveness of threat detection if rules are flawed or bypassed.
+  - Risk Severity: Medium
+  - Current Mitigations:
+    - The Chronicle backend performs rule compilation and validation checks upon rule creation or update, as indicated by the `compilation_state` and `compilation_error` attributes of the `chronicle_rule` resource. This backend validation helps to catch syntax errors and potentially some types of rule logic issues before they become fully active. The `validateRuleText` function in `validation.go` provides basic validation of rule text format.
+    - The provider itself does not introduce new vulnerabilities into the rule engine; it merely provides a management interface. The core risk lies within the YARA-L rules themselves and the Chronicle backend's ability to handle them.
+    - The risk severity is mitigated by backend validation, but the potential for logic flaws or resource-intensive rules to be uploaded still exists.
+  - Missing Mitigations:
+    - This is primarily a responsibility of the Chronicle service to ensure the robustness and security of its rule engine against malicious or poorly written rules.
+    - Provider documentation could include warnings to users about the importance of carefully vetting YARA-L rules before uploading them, especially rules from untrusted sources.
+    - Recommend best practices for YARA-L rule development and testing to minimize the risk of unintended consequences.
+
+- **Attack Surface:** RBAC Subject Mismanagement leading to Privilege Escalation or Unauthorized Access
+  - Description: Incorrectly managing RBAC subjects using the `chronicle_rbac_subject` resource can lead to unintended privilege escalation or unauthorized access within the Chronicle platform. Assigning overly permissive roles or misconfiguring subject types could grant users or groups excessive permissions.
+  - How chronicle contributes to the attack surface: The `chronicle_rbac_subject` resource allows users to programmatically manage RBAC subjects and their roles. Misuse of this resource directly impacts the access control configuration of Chronicle.
+  - Example: An administrator accidentally assigns the "Editor" role to a broad "SUBJECT_TYPE_IDP_GROUP" that includes many users who should only have "Viewer" permissions. This grants unintended users elevated privileges to modify Chronicle configurations or data.
+  - Impact: High - Privilege escalation and unauthorized access to Chronicle resources. This could lead to data breaches, unauthorized modifications, or disruption of Chronicle services depending on the roles and permissions granted.
+  - Risk Severity: High
+  - Current Mitigations:
+    - The provider relies on the Chronicle backend's RBAC system for enforcement. There is no explicit input validation within the provider to restrict role assignments beyond basic type checking of `roles` attribute as a list of strings.
+    - Documentation for the `chronicle_rbac_subject` resource implicitly encourages careful role assignment by describing the resource's purpose, but lacks specific warnings about the risks of misconfiguration.
+    - The risk severity is partially mitigated by the assumption that administrators using this resource understand RBAC principles and the implications of role assignments. However, human error in configuration remains a significant risk.
+  - Missing Mitigations:
+    - Enhance documentation for the `chronicle_rbac_subject` resource to include explicit warnings about the security implications of incorrect role assignments and the principle of least privilege.
+    - Consider adding data source to retrieve available roles in Chronicle to allow users to validate roles they are assigning are valid and exist within Chronicle.
+    - Recommend and link to Chronicle's best practices documentation for RBAC and access control management to guide users in secure configuration.

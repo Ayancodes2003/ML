@@ -1,0 +1,110 @@
+- Mitigation strategy: Secure API Key Management
+  - Description:
+    - Developers should emphasize in documentation and UI instructions the importance of keeping API keys confidential.
+    - Recommend users to use environment variables or secure configuration mechanisms instead of hardcoding keys directly in the frontend or backend code.
+    - Clearly state in documentation that API keys (OpenAI, Anthropic, Gemini, Replicate, ScreenshotOne) are stored only in the user's browser locally or in environment variables and are not transmitted to the application's servers (as mentioned in `Troubleshooting.md`).
+    - For development and testing, encourage the use of mock mode (`MOCK=true`) to avoid unnecessary API calls and potential key exposure during development.
+  - List of threats mitigated:
+    - Exposure of API keys (Severity: High if keys are compromised, leading to unauthorized API usage, potential billing issues, or service disruption of AI and screenshot services).
+  - Impact:
+    - High reduction in the risk of API key exposure, especially accidental exposure through code commits or insecure storage.
+  - Currently implemented:
+    - Partially implemented. The documentation in `README.md` and `Troubleshooting.md` mentions the need for API keys and how to set them, including using `.env` files for the backend and settings dialog in the frontend. The application also supports mock mode.
+  - Missing implementation:
+    - More explicit and prominent warnings about API key security in the README and potentially in the UI, specifically mentioning all types of API keys used (including ScreenshotOne).
+    - Consider adding a section in the Troubleshooting guide specifically addressing API key security best practices for all API keys (e.g., not committing `.env` files, using secure vault solutions for production if applicable, though this app is designed for local use primarily).
+
+- Mitigation strategy: User Data Privacy Assurance
+  - Description:
+    - Enhance privacy policy (if applicable for the hosted version) and clearly communicate to users how their screenshots and video recordings are used.
+    - Explicitly state that screenshots and videos are sent to third-party AI models (OpenAI, Anthropic, Google, Replicate) for processing and to ScreenshotOne for screenshot capture if using the screenshot URL feature.
+    - Inform users that the application itself does not store screenshots or videos persistently (if this is the case for the open-source version).
+    - For the hosted version, provide clear information about data retention policies and security measures for data in transit and at rest.
+    - Consider adding a privacy notice in the UI before users upload screenshots or videos or use the screenshot URL feature, summarizing data usage and third-party sharing.
+  - List of threats mitigated:
+    - Data privacy concerns (Severity: Medium, as users might be concerned about sending potentially sensitive visual data to AI and screenshot providers).
+  - Impact:
+    - Medium reduction in user privacy concerns by increasing transparency and building trust.
+  - Currently implemented:
+    - Partially implemented. The `Troubleshooting.md` mentions "Your key is only stored in your browser. Never stored on our servers." indicating some privacy consideration for API keys, but not explicitly for the input images/videos and screenshot URLs.
+  - Missing implementation:
+    - Clear privacy statement in the README and potentially on the hosted version website, explicitly mentioning ScreenshotOne and video processing.
+    - Privacy notice in the UI for both image/video uploads and screenshot URL feature.
+    - Detailed privacy policy for the hosted version.
+
+- Mitigation strategy: Dependency Scanning and Management
+  - Description:
+    - Implement automated dependency scanning for both frontend (yarn) and backend (poetry) dependencies in the CI/CD pipeline.
+    - Regularly review and update dependencies to their latest stable versions, especially for security patches.
+    - Use `poetry.lock` and `yarn.lock` to ensure consistent dependency versions across environments and reduce the risk of supply chain attacks.
+    - Consider using tools like `snyk` or `npm audit`/`yarn audit` to identify and remediate known vulnerabilities in dependencies.
+  - List of threats mitigated:
+    - Dependency vulnerabilities (Severity: Medium, as outdated dependencies can be exploited. However, the impact is limited as this is primarily a client-side application with a backend API).
+  - Impact:
+    - Medium reduction in the risk of vulnerabilities arising from outdated dependencies.
+  - Currently implemented:
+    - Partially implemented. The project uses `poetry.lock` and `yarn.lock` which is good practice for dependency management.
+  - Missing implementation:
+    - Automated dependency scanning in CI/CD.
+    - Regular dependency update schedule and process.
+    - Explicit security review of dependencies.
+
+- Mitigation strategy: Input Validation and Output Sanitization (for potential future features)
+  - Description:
+    - While currently the generated code is HTML/CSS/JS and executed client-side, for future features that might involve server-side code execution or handling user-provided code/data beyond image/video uploads and URLs, implement robust input validation and output sanitization.
+    - For example, if the application were to allow users to input code snippets or modify generated code on the server, ensure proper sanitization to prevent code injection attacks.
+    - Sanitize outputs from AI models before presenting them to the user if there's a risk of malicious content injection (though this is less relevant for code generation).
+  - List of threats mitigated:
+    - Code injection (Severity: Low for current application, but potential severity could be High if application functionality expands).
+  - Impact:
+    - Low impact currently, as the risk is low. However, implementing this proactively reduces future risk significantly if application evolves.
+  - Currently implemented:
+    - Not currently implemented, and not strictly necessary for the current application scope.
+  - Missing implementation:
+    - Input validation and output sanitization are not implemented, but should be considered for future development involving more complex user input or server-side code handling.
+
+- Mitigation strategy: AI Model Risk Awareness
+  - Description:
+    - Acknowledge and inform users about the inherent risks associated with using third-party AI models, including potential data breaches or service disruptions at the AI provider level.
+    - In documentation, mention that the application relies on the security and availability of external AI services (OpenAI, Anthropic, Google, Replicate).
+    - In case of AI service outages or security incidents, have a contingency plan (e.g., fallback to mock mode or alternative models if feasible and after careful security review).
+    - Since the application uses multiple AI providers, this provides some level of redundancy against service disruptions from a single provider.
+  - List of threats mitigated:
+    - AI Model Vulnerabilities (Severity: Low to Medium, depending on the criticality of the application's availability and data sensitivity. Indirect risk).
+  - Impact:
+    - Low impact on direct technical vulnerabilities within the application, but increases user awareness and preparedness for external AI service related risks.
+  - Currently implemented:
+    - Implicitly implemented by using multiple AI providers, which adds some redundancy.
+  - Missing implementation:
+    - Explicit documentation about reliance on external AI services and associated risks.
+    - Contingency plan for AI service outages or security incidents.
+
+- Mitigation strategy: Input Path Validation
+  - Description:
+    - In the backend API routes (`/evals`, `/pairwise-evals`, `/best-of-n-evals` in `evals.py`) that accept folder paths as input, implement server-side validation to ensure that the provided paths are valid and safe.
+    - Sanitize folder paths to prevent path traversal attacks. For example, ensure that paths are absolute and within expected directories, or use безопасный path manipulation functions provided by the operating system or framework.
+    - Implement checks to prevent access to sensitive directories outside of the intended evaluation folders.
+  - List of threats mitigated:
+    - Path Traversal (Severity: Medium to High, depending on the server's file system configuration and the potential for accessing sensitive files or directories).
+  - Impact:
+    - High reduction in the risk of path traversal vulnerabilities, preventing unauthorized file system access.
+  - Currently implemented:
+    - Not currently implemented. The code in `evals.py` checks if the folder exists, but does not perform detailed validation or sanitization of the path itself to prevent traversal attacks.
+  - Missing implementation:
+    - Path validation and sanitization in the `get_evals`, `get_pairwise_evals`, and `get_best_of_n_evals` routes in `evals.py`.
+
+- Mitigation strategy: URL Validation for Screenshot API
+  - Description:
+    - In the `/api/screenshot` route (`screenshot.py`), implement robust validation of the `target_url` provided by the user.
+    - Use a URL parsing library to validate the format and scheme of the URL.
+    - Implement a whitelist of allowed URL schemes (e.g., `http`, `https`) and potentially domain names if feasible and necessary.
+    - Prevent usage of internal or reserved IP addresses, and blocklisting of known malicious domains could be considered.
+    - Consider setting timeouts for the screenshot capture requests to prevent indefinite waiting and potential denial-of-service scenarios.
+  - List of threats mitigated:
+    - Server-Side Request Forgery (SSRF) (Severity: Medium to High, depending on the internal network configuration and potential access to internal services or sensitive data).
+  - Impact:
+    - High reduction in the risk of SSRF vulnerabilities by restricting the URLs that can be processed by the screenshot API.
+  - Currently implemented:
+    - Not currently implemented. The code in `screenshot.py` takes the URL directly from the request and passes it to the `capture_screenshot` function without validation.
+  - Missing implementation:
+    - URL validation in the `/api/screenshot` route in `screenshot.py` before calling the `capture_screenshot` function.

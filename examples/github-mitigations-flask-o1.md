@@ -1,0 +1,77 @@
+- **Mitigation Strategy #1: Securely Load Secrets**
+  - **Description (Step-by-Step):**
+    - Remove any hard-coded SECRET_KEY (or similar secrets) from the codebase (e.g., config.py).
+    - Generate a new random secret and store it in a secure location (such as environment variables or a secure secrets manager).
+    - Update the Flask application to load this secret value from the secure source at runtime, ensuring it never appears in plaintext within version control.
+  - **List of Threats Mitigated (Severity):**
+    - Exposure of sensitive keys (High)
+    - Unauthorized access if attackers obtain secret (High)
+  - **Impact:**
+    - Significantly reduces the likelihood of attackers reusing the stolen secret key to tamper with sessions or impersonate users.
+    - Minimizes the risk of secret leakage on publicly accessible repositories or configuration files.
+  - **Currently Implemented:**
+    - Some references to environment variables exist in the application’s startup script (partial usage in config loading).
+  - **Missing Implementation:**
+    - A hard-coded SECRET_KEY is still present in config.py; needs removal and replacement with a secure approach.
+
+- **Mitigation Strategy #2: Disable Flask Debug Mode in Production**
+  - **Description (Step-by-Step):**
+    - Remove or comment out any occurrences of app.run(debug=True) for the production environment.
+    - Use conditionals or environment-based flags (e.g., FLASK_ENV) to enable debug mode only in local development.
+    - Confirm the production configuration never exposes debug errors or the interactive debugger.
+  - **List of Threats Mitigated (Severity):**
+    - Exposure of stack traces and internal code details (Medium)
+    - Direct access to critical information in debugger console (High)
+  - **Impact:**
+    - Prevents attackers from obtaining sensitive information (like environment variables or partial code) that could be revealed by the debug interface.
+    - Greatly reduces the risk of unauthorized interactive console usage in production.
+  - **Currently Implemented:**
+    - Debug mode is toggled off in some production deployment scripts, but not enforced consistently.
+  - **Missing Implementation:**
+    - The code in run.py (or a similar startup file) does not explicitly differentiate between dev and production environments.
+
+- **Mitigation Strategy #3: Enforce Template Autoescaping and Safe Rendering**
+  - **Description (Step-by-Step):**
+    - Configure Jinja2 (Flask’s default template engine) to enable autoescape for all user-generated content.
+    - Explicitly use safe filters such as |e when rendering variables containing user-supplied data.
+    - Unless absolutely required, avoid rendering raw HTML content submitted by untrusted sources.
+  - **List of Threats Mitigated (Severity):**
+    - Cross-Site Scripting (XSS) (High)
+    - HTML injection attacks (Medium)
+  - **Impact:**
+    - Greatly decreases the chance that malicious scripts embedded by attackers run in other users’ browsers.
+  - **Currently Implemented:**
+    - Template autoescaping is on by default in some templates, but explicit escapes are inconsistent.
+  - **Missing Implementation:**
+    - Several routes that render “untrusted” user inputs do not apply safe filters, leaving potential XSS gaps.
+
+- **Mitigation Strategy #4: Minimize Detailed Error Messages**
+  - **Description (Step-by-Step):**
+    - Replace any verbose error pages or exception dumps with generic error responses when in production mode.
+    - Configure custom Flask error handlers for important HTTP status codes (e.g., 404, 500) to control the messages returned to users.
+    - Store detailed error logs separately, ensuring they aren’t exposed in production routes.
+  - **List of Threats Mitigated (Severity):**
+    - Information Disclosure (Medium)
+    - Potential use of error details for further exploitation (Medium)
+  - **Impact:**
+    - Reduces the ability of attackers to learn about internal code structure, server paths, or configuration details.
+  - **Currently Implemented:**
+    - Some routes handle exceptions gracefully and return custom 404 or 500 pages.
+  - **Missing Implementation:**
+    - A few modules still return stack traces by default if unhandled exceptions occur.
+
+- **Mitigation Strategy #5: Use Server-Side Retrieval for Sensitive Identifiers**
+  - **Description (Step-by-Step):**
+    - Replace direct reliance on user-submitted IDs or tokens with server-side lookups using the Flask session.
+    - On login, store a verified user ID in the session and retrieve it internally on subsequent requests.
+    - Validate session tokens and confirm ownership of resources before granting access to critical operations.
+  - **List of Threats Mitigated (Severity):**
+    - Session Hijacking or Replay (High)
+    - User Impersonation (High)
+  - **Impact:**
+    - Dramatically reduces the opportunity for attackers to craft requests using forged or stolen identifiers.
+    - Ensures the application consistently identifies the correct user context.
+  - **Currently Implemented:**
+    - Session-based authentication appears in some routes, but certain user-related actions still rely on ID parameters in the request.
+  - **Missing Implementation:**
+    - No forced identity verification via session for specific critical routes (e.g., resource deletion).

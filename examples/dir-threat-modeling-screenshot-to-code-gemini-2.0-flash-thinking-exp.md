@@ -1,0 +1,128 @@
+# Threat Model for screenshot-to-code Application
+
+- Threat: **Exposure of OpenAI/Anthropic/Gemini API keys**
+    - Description: Attackers might gain access to the OpenAI, Anthropic, or Gemini API keys if they are not securely managed. This could happen if keys are hardcoded, exposed in logs, stored insecurely in the frontend (browser local storage), or leaked through server-side vulnerabilities. Once obtained, attackers could use these keys to make unauthorized API calls, leading to financial charges for the application owner, service disruption, or access to potentially sensitive AI models.
+    - Impact: Financial loss, service disruption, unauthorized access to AI models.
+    - Affected component: backend, frontend, configuration files (.env, config.py), README.md (instructions), `backend/routes/generate_code.py`.
+    - Current mitigations: API keys are intended to be set via environment variables or frontend settings dialog (stored in browser local storage - mentioned in Troubleshooting.md). Instructions in README.md guide users to set up keys in `.env` files. Frontend settings dialog mentions "Your key is only stored in your browser. Never stored on our servers." This reduces the risk of server-side exposure but introduces client-side storage risks. Severity is reduced to medium as keys are not hardcoded in the repository and there are instructions for secure(ish) setup, but client-side storage and user misconfiguration are still risks. The code in `backend/routes/generate_code.py` retrieves keys from environment variables or settings dialog, which aligns with the intended mitigation, but client-side storage and environment variable misconfiguration remain risks.
+    - Missing mitigations:
+        - Server-side secure key management (e.g., using a secrets manager if moving to a more robust deployment).
+        - Input validation and sanitization to prevent API key injection through user inputs (though less relevant in this app's current architecture, it's a good practice).
+        - Consider moving key configuration to backend only and securely passing configuration to frontend instead of storing API keys directly in frontend local storage.
+        - Implement rate limiting on API calls to limit potential damage from compromised keys.
+        - Regularly audit and rotate API keys.
+    - Risk severity: High
+
+- Threat: **Prompt Injection**
+    - Description: An attacker could craft malicious input (e.g., within a screenshot or video) that, when processed by the LLM, alters the intended prompt, leading to unintended or harmful code generation. This could range from generating nonsensical code to potentially introducing malicious code snippets into the generated output if the LLM is tricked into following attacker's instructions embedded in the input.  Processing video input, as implemented in `backend/video/utils.py`, also introduces the same prompt injection risks as image input.
+    - Impact: Generation of flawed or potentially malicious code, application malfunction, potential security vulnerabilities in generated code.
+    - Affected component: backend (llm.py, prompts/\*.py, evals/\*.py), frontend (user input via image/video upload), `backend/routes/generate_code.py`, `backend/video/utils.py`.
+    - Current mitigations: The application relies on pre-defined prompts in `prompts/\*.py`. Input is primarily image/video data, which makes direct prompt injection less straightforward compared to text-based inputs. However, sophisticated attacks could potentially craft images or videos to influence the LLM's behavior. Current mitigations are weak, risk severity remains high.
+    - Missing mitigations:
+        - Prompt hardening: Carefully design prompts to be less susceptible to injection attacks. This is inherently difficult with LLMs but techniques like clear separation of instructions and input data could be explored.
+        - Input sanitization and validation: While processing image/video input, attempt to sanitize or validate the content to remove or neutralize potential injection attempts (though this is challenging for visual input).
+        - Content Security Policy (CSP) in frontend to limit the capabilities of any potentially injected malicious code in the generated output from affecting the application itself (client-side).
+        - Monitor LLM outputs for unexpected or malicious content and implement alerts.
+    - Risk severity: High
+
+- Threat: **Dependency Vulnerabilities**
+    - Description: The application relies on numerous Python and Node.js dependencies (listed in `backend/pyproject.toml` and `frontend/package.json`). These dependencies might contain known security vulnerabilities. Attackers could exploit these vulnerabilities if the dependencies are not regularly updated and managed. Vulnerabilities could exist in libraries used for image processing (Pillow), video processing (moviepy), AI API clients (openai, anthropic, google-genai), web frameworks (fastapi), or frontend libraries (React, Tailwind, etc.).  The newly added code in `backend/routes/evals.py`, `backend/routes/generate_code.py`, `backend/routes/screenshot.py`, and `backend/video/utils.py` further utilizes these and potentially other dependencies, maintaining the risk.
+    - Impact: Various, depending on the vulnerability. Could range from Denial of Service (DoS), Remote Code Execution (RCE) on the backend server, Cross-Site Scripting (XSS) in the frontend if vulnerabilities are in frontend dependencies, or data breaches.
+    - Affected component: backend (dependencies in pyproject.toml), frontend (dependencies in package.json), Dockerfiles (Dockerfile in backend and frontend), all backend modules.
+    - Current mitigations: Project uses Poetry for backend and Yarn for frontend dependency management, which helps in managing dependencies and potentially updating them. Dockerfiles specify base images which might include some level of up-to-date packages depending on the base image and build process. However, there's no explicit mention of automated dependency scanning or updates in the provided files. Mitigation is partial, risk severity remains medium.
+    - Missing mitigations:
+        - Implement automated dependency vulnerability scanning and alerting (e.g., using tools like Snyk, Dependabot, or similar).
+        - Regularly update dependencies to the latest stable versions, especially for security patches.
+        - Review and minimize the number of dependencies to reduce the attack surface.
+        - Consider using Software Bill of Materials (SBOM) to track dependencies.
+    - Risk severity: Medium
+
+- Threat: **Server-Side Code Execution via Malicious Input in Evaluation Datasets**
+    - Description: The evaluation process uses input screenshots located in `backend/evals_data/inputs` and reads HTML output files. If an attacker can inject malicious files into these directories (less likely in a typical setup but possible in compromised development environments or CI/CD pipelines), these files could be processed by the backend during evaluation, potentially leading to server-side code execution if image processing or file reading components have vulnerabilities and are triggered by crafted malicious files. The new `backend/routes/evals.py` routes expose functionality to read and process files in specified folders, potentially exacerbating this risk if folder paths are not properly validated.
+    - Impact: Remote Code Execution (RCE) on the backend server, allowing attackers to compromise the server, steal data, or disrupt service.
+    - Affected component: backend (evals/\*.py, run_evals.py, image_processing/utils.py, llm.py, `backend/routes/evals.py`), evaluation dataset (`backend/evals_data/inputs`).
+    - Current mitigations: Access to `backend/evals_data/inputs` directory is likely limited to developers/operators. The evaluation process itself (scripts in `evals/\*.py`, `run_evals.py`) is intended for internal use. However, if the system is compromised or if untrusted individuals gain access to modify files, this threat becomes relevant. Current mitigations are weak if access controls are not properly enforced, risk severity is medium.
+    - Missing mitigations:
+        - Input validation and sanitization for evaluation datasets and HTML output files. Ensure that files in evaluation directories are properly validated and sanitized before being processed during evaluation.
+        - Secure access controls to the evaluation dataset directory and evaluation scripts, and folders used in evaluation routes. Restrict access to authorized personnel only.
+        - Run evaluation processes in isolated environments (e.g., containers) to limit the impact of potential exploitation.
+        - Implement path traversal vulnerability checks in `backend/routes/evals.py` to ensure that accessed folders are within expected evaluation directories.
+    - Risk severity: Medium
+
+- Threat: **Insecure Handling of User-Provided Video/Image Data**
+    - Description: The application processes user-uploaded screenshots and videos. If these are not handled securely, several vulnerabilities could arise. For example, processing could be vulnerable to image/video processing exploits (via libraries like Pillow, moviepy, as used in `backend/video/utils.py`), or temporary files created during processing might not be securely handled, potentially leading to information disclosure or local file inclusion vulnerabilities if an attacker can manipulate file paths or access temporary storage.
+    - Impact: Information disclosure, Local File Inclusion (LFI), potentially Remote Code Execution (RCE) if image/video processing libraries have vulnerabilities.
+    - Affected component: backend (image_processing/utils.py, video_to_app.py, llm.py, `backend/video/utils.py`), frontend (image/video upload functionality), `backend/routes/generate_code.py`.
+    - Current mitigations: Application uses libraries like Pillow and moviepy for image/video processing. There's some image processing in `image_processing/utils.py` to resize and compress images for Claude API, which includes basic checks on image dimensions and size. However, comprehensive security checks against various image/video file vulnerabilities are not evident. Mitigation is partial, risk severity remains medium.
+    - Missing mitigations:
+        - Implement robust input validation and sanitization for uploaded images and videos. Use secure image/video processing libraries and ensure they are up-to-date.
+        - Secure temporary file handling. If temporary files are created during processing (like in `backend/video/utils.py`), ensure they are stored securely with appropriate permissions and deleted after use. Avoid storing sensitive data in temporary files if possible.
+        - Implement resource limits for image/video processing to prevent Denial of Service (DoS) attacks by uploading extremely large or complex files.
+        - Regularly audit and update image and video processing libraries.
+    - Risk severity: Medium
+
+- Threat: **Exposure of Debug Artifacts in Production**
+    - Description: The application has debugging features (DebugFileWriter, DEBUG\_DIR, IS\_DEBUG_ENABLED in `backend/debug/DebugFileWriter.py` and `backend/config.py`). If debugging is accidentally enabled or debug directories are exposed in a production environment, sensitive information (like prompts, LLM responses, intermediate code, logs - as seen in `DebugFileWriter.py`) could be written to debug files and become accessible to attackers.
+    - Impact: Information disclosure of potentially sensitive data (prompts, generated code, internal application data), which could aid further attacks or compromise user privacy.
+    - Affected component: backend (debug/\*.py, config.py, llm.py).
+    - Current mitigations: Debugging is controlled by `IS_DEBUG_ENABLED` environment variable in `config.py`, intended to be disabled in production. The `DebugFileWriter` class is only instantiated if `IS_DEBUG_ENABLED` is true. However, misconfiguration could lead to debug mode being enabled in production. Mitigation depends on correct configuration management, risk severity is medium.
+    - Missing mitigations:
+        - Ensure debug features are strictly disabled in production deployments. Double-check configuration and deployment processes.
+        - If debug logging is necessary in production for monitoring, ensure logs are securely stored and access-controlled, and avoid logging highly sensitive data in production logs.
+        - Implement runtime checks to ensure debug mode is disabled in production and fail-safe mechanisms if it's accidentally enabled.
+    - Risk severity: Medium
+
+- Threat: **CORS Misconfiguration**
+    - Description: The backend uses CORS middleware with `allow_origins=["*"]` in `backend/main.py`. This configuration allows requests from any origin, which might be too permissive for a production application. If not intended, this could allow malicious websites to make requests to the backend API on behalf of users, potentially leading to Cross-Site Request Forgery (CSRF) or other cross-origin vulnerabilities.
+    - Impact: Potential CSRF vulnerabilities, unauthorized access to backend API from malicious origins, depending on the application's functionality and authentication mechanisms (which are not fully detailed in provided files).
+    - Affected component: backend (main.py).
+    - Current mitigations: CORS is configured using FastAPI's `CORSMiddleware`. The current configuration is very permissive (`allow_origins=["*"]`). If this is intentional for development or open API purposes, it might be acceptable. However, for a production application with user data or sensitive operations, this is a security risk. Current mitigation is weak for production scenarios, risk severity is medium.
+    - Missing mitigations:
+        - Configure CORS to be more restrictive in production. Specify only the allowed origins (e.g., the frontend domain) instead of allowing all origins (`"*"`).
+        - If dynamic origins are needed, implement proper origin validation logic instead of blindly allowing all.
+        - Implement CSRF protection mechanisms in the backend and frontend to mitigate potential CSRF attacks, especially if authentication and session management are introduced later.
+    - Risk severity: Medium
+
+- Threat: **Path Traversal in Evaluation Routes**
+    - Description: The `backend/routes/evals.py` routes (`/evals`, `/pairwise-evals`, `/best-of-n-evals`) take folder paths as query parameters. If these paths are not properly validated and sanitized, an attacker could manipulate these parameters to access files and directories outside the intended evaluation directories. This could lead to information disclosure, allowing access to sensitive server files.
+    - Impact: Information Disclosure, potential access to sensitive files.
+    - Affected component: backend (`backend/routes/evals.py`).
+    - Current mitigations: The code checks if the provided folder exists using `os.path.exists()`. However, it does not validate if the folder path is within an allowed base directory for evaluations, making it vulnerable to path traversal. Mitigation is weak, risk severity is high.
+    - Missing mitigations:
+        - Implement robust path validation and sanitization in the evaluation routes. Validate that the provided folder paths are within a predefined allowed base directory. Use secure path manipulation functions to prevent traversal outside of allowed directories.
+        - Restrict access to evaluation routes to authorized users only, as these are intended for internal evaluation purposes.
+    - Risk severity: High
+
+- Threat: **ScreenshotOne API Key Exposure**
+    - Description: The `backend/routes/screenshot.py` uses an API key for the ScreenshotOne service. If this API key is exposed (e.g., hardcoded, leaked, or accessible through other vulnerabilities), attackers could abuse the ScreenshotOne service using the application's API key. This could lead to financial costs for the application owner or misuse of the screenshot service.
+    - Impact: Financial loss, potential misuse of screenshot service.
+    - Affected component: backend (`backend/routes/screenshot.py`).
+    - Current mitigations: The code in `backend/routes/screenshot.py` expects the ScreenshotOne API key to be provided in the `ScreenshotRequest` from the frontend. This means the API key is likely managed client-side or needs to be passed from client to backend for each screenshot request. This approach itself is a vulnerability as it makes the API key potentially visible in network requests or client-side code. Mitigation is very weak, risk severity is high.
+    - Missing mitigations:
+        - Securely manage the ScreenshotOne API key on the backend server. Avoid passing the API key from the frontend. Configure the backend to retrieve the API key from a secure source (environment variable or secrets manager).
+        - Implement rate limiting and usage monitoring for the ScreenshotOne API to detect and mitigate potential abuse.
+        - Consider alternative screenshotting methods that do not rely on third-party API keys if possible.
+    - Risk severity: High
+
+- Threat: **Server-Side Request Forgery (SSRF) via Screenshot URL**
+    - Description: The `backend/routes/screenshot.py` endpoint takes a `url` parameter to capture a screenshot. If this URL is not properly validated, an attacker could provide a malicious URL, causing the backend server to make requests to internal resources or external services on their behalf. This could be used to scan internal networks, access internal services, or potentially exfiltrate data from internal systems if they are accessible from the backend server.
+    - Impact: Information disclosure of internal network structure, access to internal services, potential data exfiltration from internal systems.
+    - Affected component: backend (`backend/routes/screenshot.py`).
+    - Current mitigations: The code in `backend/routes/screenshot.py` does not perform any validation or sanitization of the input `url` before passing it to the `capture_screenshot` function. There are no evident mitigations against SSRF. Risk severity is high.
+    - Missing mitigations:
+        - Implement robust URL validation and sanitization for the `url` parameter in the `/api/screenshot` endpoint. Use a whitelist of allowed URL schemes (e.g., `http`, `https`) and consider blacklisting or filtering out private IP ranges and loopback addresses.
+        - If possible, restrict the network access of the backend server to minimize the potential impact of SSRF attacks.
+        - Implement logging and monitoring of outbound requests from the screenshot functionality to detect and investigate suspicious activity.
+    - Risk severity: High
+
+- Threat: **Denial of Service (DoS) via WebSocket Abuse**
+    - Description: The `/generate-code` endpoint in `backend/routes/generate_code.py` is implemented as a WebSocket. Attackers could potentially abuse this endpoint to cause a Denial of Service (DoS) by sending a large number of connection requests, sending malformed messages, or exploiting potential resource exhaustion vulnerabilities in the WebSocket handling logic.
+    - Impact: Service disruption, backend server overload, potential unavailability of the application.
+    - Affected component: backend (`backend/routes/generate_code.py`).
+    - Current mitigations: There are no explicit DoS mitigation measures evident in the provided code. The application might be implicitly protected by the underlying web server's connection limits or resource management, but these are not application-level mitigations. Mitigation is weak, risk severity is medium.
+    - Missing mitigations:
+        - Implement rate limiting on WebSocket connections and message processing to limit the number of requests from a single IP address or client.
+        - Implement input validation and sanitization for WebSocket messages to prevent processing of malformed or excessively large messages that could consume excessive resources.
+        - Implement resource limits (e.g., memory, CPU) for WebSocket connections to prevent resource exhaustion.
+        - Consider using a WebSocket gateway or load balancer to distribute and manage WebSocket connections and provide DoS protection.
+    - Risk severity: Medium

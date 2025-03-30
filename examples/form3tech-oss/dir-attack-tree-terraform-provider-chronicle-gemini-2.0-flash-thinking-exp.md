@@ -1,0 +1,115 @@
+# Attack Tree for Terraform Chronicle Provider
+
+**Attacker Goal:** Compromise Chronicle Application by Exploiting Terraform Provider
+
+## Compromise Chronicle Application
+
+- **1. Exploit Credential Exposure**
+  - Description: Attacker gains access to sensitive credentials used by the Terraform provider to authenticate with Chronicle APIs or external services integrated via feeds.
+  - Actionable Insights:
+    - Store Terraform state files securely and restrict access.
+    - Avoid storing sensitive credentials directly in Terraform configurations. Use secrets management tools or Terraform Cloud/Enterprise for secret handling.
+    - Educate users on the risks of exposing environment variables containing credentials.
+  - Likelihood: Medium
+  - Impact: High (Full access to Chronicle APIs and integrated services, potential data breach, unauthorized actions within Chronicle and connected systems)
+  - Effort: Low (If state files or environment are not properly secured)
+  - Skill Level: Low
+  - Detection Difficulty: Medium (Depends on monitoring of Chronicle API access and state file security)
+  - **1.1. Retrieve Credentials from Terraform State Files**
+    - Description: Attacker accesses Terraform state files (e.g., `.tfstate` or state stored in backend) which may contain plaintext credentials if not properly managed.
+    - Actionable Insights:
+      - Use a remote backend for Terraform state storage with access controls.
+      - Enable state file encryption at rest and in transit for the backend.
+      - Regularly audit access to Terraform state files.
+    - Likelihood: Medium (If state backend is not secured)
+    - Impact: High (Exposure of credentials)
+    - Effort: Low (If state files are accessible)
+    - Skill Level: Low
+    - Detection Difficulty: Low (If state file access is not logged and monitored)
+  - **1.2. Obtain Credentials from Environment Variables**
+    - Description: Attacker gains access to environment variables where credentials like `CHRONICLE_BACKSTORY_CREDENTIALS`, `CHRONICLE_BIGQUERY_CREDENTIALS`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AZURE_SHARED_KEY`, `AZURE_SAS_TOKEN`, `OFFICE365_CLIENT_SECRET`, `OKTA_API_TOKEN`, `PROOFPOINT_SECRET`, `QUALYS_SECRET`, `THINKST_CANARY_TOKEN` etc., might be stored.
+    - Actionable Insights:
+      - Avoid storing credentials in environment variables if possible.
+      - If environment variables are necessary, secure the environment where the provider is running.
+      - Use more secure methods for credential management, such as credential files or access tokens.
+    - Likelihood: Medium (If environment is not properly secured or in CI/CD pipelines logs)
+    - Impact: High (Exposure of credentials)
+    - Effort: Low (If environment is accessible or logs are exposed)
+    - Skill Level: Low
+    - Detection Difficulty: Medium (Depends on environment and logging security)
+  - **1.3. Intercept Credentials during Input**
+    - Description: Attacker intercepts credentials as they are input into Terraform configuration or passed via command-line if not handled securely.
+    - Actionable Insights:
+      - Use secure input methods and avoid echoing credentials in logs or command history.
+      - Encourage use of credential files or access tokens instead of direct input.
+    - Likelihood: Low
+    - Impact: Medium (Exposure of credentials)
+    - Effort: Medium (Requires local access or monitoring input methods)
+    - Skill Level: Medium
+    - Detection Difficulty: High (Difficult to detect real-time interception)
+
+- **2. Man-in-the-Middle (MitM) Attack on Custom Endpoints**
+  - Description: Attacker intercepts communication between the Terraform provider and Chronicle API custom endpoints (e.g., `*_custom_endpoint`) if TLS is not enforced or misconfigured.
+  - Actionable Insights:
+    - Ensure TLS is always enabled and enforced for all Chronicle API endpoints, especially custom ones.
+    - Validate TLS certificates to prevent MitM attacks.
+    - Avoid using custom endpoints if not absolutely necessary and prefer official Chronicle API endpoints.
+    - Properly configure and secure the network infrastructure where custom endpoints are hosted.
+  - Likelihood: Medium (If custom endpoints are used without proper TLS configuration)
+  - Impact: High (Data interception, credential theft, potential API manipulation)
+  - Effort: Medium (Requires network access and MitM attack capabilities)
+  - Skill Level: Medium
+  - Detection Difficulty: Medium (Requires network monitoring and TLS inspection)
+
+- **3. Exploit Debug Port Exposure**
+  - Description: Attacker gains unauthorized access to the debugging port (2345) exposed by the `debug.sh` script, potentially allowing control over the provider process.
+  - Actionable Insights:
+    - Never expose the debug port to untrusted networks or the internet.
+    - Only use the debug script in isolated, secure development environments.
+    - Ensure the debug port is only accessible from localhost or trusted IPs.
+    - Remove or disable debug functionality in production builds.
+  - Likelihood: Low (If debug script is used only in development and port is not exposed)
+  - Impact: Critical (Full control over provider process, potential credential extraction, manipulation of provider operations)
+  - Effort: Low (If debug port is inadvertently exposed)
+  - Skill Level: Medium
+  - Detection Difficulty: Low (If debug port exposure is not monitored by network security tools)
+
+- **4. Supply Chain Vulnerability via Dependencies**
+  - Description: Attacker compromises a dependency used by the Terraform provider, potentially injecting malicious code that could be executed during provider operations.
+  - Actionable Insights:
+    - Regularly audit and update dependencies to their latest secure versions.
+    - Use dependency scanning tools to identify known vulnerabilities in dependencies.
+    - Implement Software Bill of Materials (SBOM) to track dependencies and their versions.
+    - Use vendoring to manage dependencies and reduce reliance on external repositories during build time.
+  - Likelihood: Low (If dependencies are actively managed and scanned)
+  - Impact: High (Potential remote code execution within the provider, data exfiltration, manipulation of provider operations)
+  - Effort: Medium (Requires identifying and exploiting vulnerabilities in dependencies)
+  - Skill Level: High
+  - Detection Difficulty: Medium (Requires sophisticated monitoring and code analysis to detect malicious dependency behavior)
+
+- **5. Vulnerability in Feed Resource Logic**
+  - Description: Attacker exploits a vulnerability in the code that handles feed resources (e.g., `resource_feed_amazon_s3.go`, `resource_feed_okta_system_log.go`, `resource_feed_thinkst_canary.go`, etc.), potentially leading to unexpected behavior or security breaches when processing external data sources. This could include issues in input validation, data parsing, or handling of authentication details for external services.
+  - Actionable Insights:
+    - Implement robust input validation for all feed configurations and data sources.
+    - Conduct thorough security testing, including fuzzing and static analysis, of feed resource logic.
+    - Follow secure coding practices to prevent common vulnerabilities like injection flaws and buffer overflows in feed processing code.
+    - Isolate feed processing logic to limit the impact of potential vulnerabilities.
+    - Pay close attention to the handling of authentication credentials for external services within feed resources, ensuring secure storage and transmission.
+  - Likelihood: Medium (Given the complexity of handling various feed types and data sources)
+  - Impact: Medium (Denial of service, data corruption, potential information disclosure, unauthorized access to external services, depending on the vulnerability)
+  - Effort: Medium (Requires identifying and exploiting specific vulnerabilities in feed resource logic)
+  - Skill Level: Medium
+  - Detection Difficulty: Medium (Requires code review and monitoring of provider behavior for anomalies)
+
+- **6. Malicious Rule Injection**
+  - Description: Attacker injects malicious YARA-L rules via the `chronicle_rule` resource. This could lead to false positives/negatives in security detections, resource exhaustion within Chronicle, or potentially exploitation of vulnerabilities in Chronicle's rule processing engine.
+  - Actionable Insights:
+    - Implement strict input validation and sanitization for `rule_text` attribute to prevent injection of malicious code or unexpected rule syntax that could cause errors or bypass security checks within Chronicle.
+    - Perform static analysis and security scanning of YARA-L rules before applying them to Chronicle to detect potentially malicious patterns or logic.
+    - Implement monitoring and alerting for rule deployments and modifications to detect unauthorized or suspicious changes.
+    - Follow least privilege principles when granting permissions to manage Chronicle rules, limiting access to authorized personnel only.
+  - Likelihood: Low (Requires ability to modify Terraform configuration and apply changes)
+  - Impact: Medium (Potential for degraded security monitoring, false alerts, resource consumption within Chronicle)
+  - Effort: Medium (Requires understanding of YARA-L and Chronicle rule syntax, and access to Terraform configuration)
+  - Skill Level: Medium
+  - Detection Difficulty: Medium (Depends on monitoring of rule changes and anomaly detection in Chronicle rule behavior)

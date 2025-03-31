@@ -86,7 +86,7 @@ def getDescription():
     global description_list
     with open('MasterData/symptom_Description.csv') as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
-        line_count = 0
+        #line_count = 0
         for row in csv_reader:
             _description={row[0]:row[1]}
             description_list.update(_description)
@@ -99,12 +99,12 @@ def getSeverityDict():
     with open('MasterData/symptom_severity.csv') as csv_file:
 
         csv_reader = csv.reader(csv_file, delimiter=',')
-        line_count = 0
+        #line_count = 0
         try:
             for row in csv_reader:
                 _diction={row[0]:int(row[1])}
                 severityDictionary.update(_diction)
-        except:
+        except Exception:
             pass
 
 
@@ -113,7 +113,7 @@ def getprecautionDict():
     with open('MasterData/symptom_precaution.csv') as csv_file:
 
         csv_reader = csv.reader(csv_file, delimiter=',')
-        line_count = 0
+        #line_count = 0
         for row in csv_reader:
             _prec={row[0]:[row[1],row[2],row[3],row[4]]}
             precautionDictionary.update(_prec)
@@ -195,10 +195,10 @@ def tree_to_code(tree, feature_names):
         try:
             num_days=int(input("Okay. From how many days ? : "))
             break
-        except:
+        except Exception:
             print("Enter valid input.")
     def recurse(node, depth):
-        indent = "  " * depth
+        #indent = "  " * depth
         if tree_.feature[node] != _tree.TREE_UNDEFINED:
             name = feature_name[node]
             threshold = tree_.threshold[node]
